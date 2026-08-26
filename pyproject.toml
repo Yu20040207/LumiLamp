@@ -1,0 +1,9 @@
+[project]
+name = "lumilamp"
+version = "0.1.0"
+description = "Hardware-free motion simulation skeleton for LumiLamp"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=15,<16",
+    "sherpa-onnx>=1.12,<2",
+]

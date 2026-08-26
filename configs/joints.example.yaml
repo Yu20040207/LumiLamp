@@ -1,0 +1,23 @@
+# Documentation-only example; no YAML dependency is installed in phase A.
+joints:
+  - name: base_yaw
+    id: 1
+    min_angle: -45.0
+    max_angle: 45.0
+  - name: shoulder_pitch
+    id: 2
+    min_angle: -35.0
+    max_angle: 55.0
+  - name: elbow_pitch
+    id: 3
+    min_angle: -45.0
+    max_angle: 65.0
+  - name: head_pitch
+    id: 4
+    min_angle: -30.0
+    max_angle: 35.0
+  - name: head_yaw
+    id: 5
+    min_angle: -40.0
+    max_angle: 40.0
+
