@@ -7,3 +7,10 @@ dependencies = [
     "websockets>=15,<16",
     "sherpa-onnx>=1.12,<2",
 ]
+
+[project.optional-dependencies]
+kws-tools = [
+    "click>=8,<9",
+    "sentencepiece>=0.2,<1",
+    "pypinyin>=0.55,<1",
+]

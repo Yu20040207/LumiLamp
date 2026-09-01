@@ -14,3 +14,12 @@ build/
 *.pem
 *.key
 .DS_Store
+
+# Locally prepared sherpa-onnx keyword models and download cache.
+models/kws/
+models/sherpa-onnx-kws-*/
+.cache/sherpa-onnx/
+
+# Locally prepared wake-reply audio caches.
+cache/
+*.wav

@@ -8,7 +8,19 @@ from lumilamp.voice.audio_output import (
     speak,
     validate_volume,
 )
-from lumilamp.voice.config import VoiceConfig
+from lumilamp.voice.config import AsrConfig, VoiceConfig
+
+
+def make_config() -> VoiceConfig:
+    return VoiceConfig(
+        asr=AsrConfig("app", "asr-token", "asr-resource"),
+        tts_api_key="tts-secret",
+        tts_resource_id="seed-tts-2.0",
+        ark_api_key="ark-secret",
+        ark_model_id="model",
+        kws_model_dir=Path("/opt/lumilamp/models/kws"),
+        wake_cache_dir=Path("/opt/lumilamp/cache/wake"),
+    )
 
 
 class AudioOutputTests(unittest.TestCase):
@@ -25,9 +37,9 @@ class AudioOutputTests(unittest.TestCase):
 
     @patch("lumilamp.voice.audio_output.subprocess.run")
     def test_sets_volume_with_safe_argument_list(self, run) -> None:
-        set_usb_speaker_volume(2, 70)
+        set_usb_speaker_volume("Device_1", 70)
         run.assert_called_once_with(
-            ["amixer", "-c", "2", "sset", "Speaker", "70%", "unmute"],
+            ["amixer", "-c", "Device_1", "sset", "Speaker", "70%", "unmute"],
             check=True,
         )
 
@@ -45,7 +57,7 @@ class AudioOutputTests(unittest.TestCase):
     def test_speak_synthesizes_sets_volume_then_plays(
         self, synthesize, set_volume, play
     ) -> None:
-        config = VoiceConfig("app", "token", "asr", "tts", "key", "model")
+        config = make_config()
         output_path = Path("/tmp/test.wav")
 
         order: list[str] = []
@@ -53,13 +65,13 @@ class AudioOutputTests(unittest.TestCase):
         set_volume.side_effect = lambda *args: order.append("volume")
         play.side_effect = lambda *args: order.append("play")
 
-        speak(config, "你好", output_path, card=2, device="plughw:Device")
+        speak(config, "你好", output_path, card_id="Device_1", device="plughw:Device")
 
         self.assertEqual(
             [call.args for call in synthesize.call_args_list],
             [(config, "你好", output_path)],
         )
-        self.assertEqual(set_volume.call_args.args, (2, 70))
+        self.assertEqual(set_volume.call_args.args, ("Device_1", 80))
         self.assertEqual(play.call_args.args, ("plughw:Device", output_path))
         self.assertEqual(order, ["synthesize", "volume", "play"])
 

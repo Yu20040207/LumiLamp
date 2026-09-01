@@ -9,6 +9,9 @@ from .config import VoiceConfig
 from .tts import synthesize_to_wav
 
 
+CONVERSATION_VOLUME_PERCENT = 80
+
+
 def validate_volume(percent: int) -> int:
     """Validate and return an ALSA mixer percentage."""
     if not 0 <= percent <= 100:
@@ -16,11 +19,11 @@ def validate_volume(percent: int) -> int:
     return percent
 
 
-def set_usb_speaker_volume(card: int, percent: int = 70) -> None:
+def set_usb_speaker_volume(card_id: str, percent: int = 70) -> None:
     """Set the selected ALSA card's Speaker control without a shell."""
     validated = validate_volume(percent)
     subprocess.run(
-        ["amixer", "-c", str(card), "sset", "Speaker", f"{validated}%", "unmute"],
+        ["amixer", "-c", card_id, "sset", "Speaker", f"{validated}%", "unmute"],
         check=True,
     )
 
@@ -34,10 +37,10 @@ def speak(
     config: VoiceConfig,
     text: str,
     output_path: Path,
-    card: int,
+    card_id: str,
     device: str,
 ) -> None:
     """Synthesize, set conversation volume, and play one response."""
     synthesize_to_wav(config, text, output_path)
-    set_usb_speaker_volume(card, 70)
+    set_usb_speaker_volume(card_id, CONVERSATION_VOLUME_PERCENT)
     play_wav(device, output_path)
