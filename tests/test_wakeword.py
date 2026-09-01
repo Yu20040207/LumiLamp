@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from lumilamp.voice import wakeword
 from lumilamp.voice.wakeword import SherpaWakeWordDetector, WakeWordConfig
 
 
@@ -78,16 +79,19 @@ def make_detector(
 
 
 class WakeWordTests(unittest.TestCase):
-    def test_defaults_to_confirmed_chinese_phrase(self) -> None:
+    def test_defaults_to_both_confirmed_phrases(self) -> None:
         config = WakeWordConfig(MODEL_DIR)
 
-        self.assertEqual(config.keyword, "你好露米")
+        self.assertEqual(getattr(wakeword, "WAKE_PHRASES", None), ("露米", "你好露米"))
+        self.assertEqual(getattr(config, "phrases", None), ("露米", "你好露米"))
         self.assertEqual(config.threshold, 0.25)
         self.assertEqual(config.score, 1.0)
 
-    def test_rejects_unsupported_keyword_and_invalid_tuning(self) -> None:
+    def test_rejects_invalid_phrases_and_tuning(self) -> None:
         invalid = (
-            ({"keyword": "露米"}, "exactly 你好露米"),
+            ({"phrases": ()}, "at least one phrase"),
+            ({"phrases": ("露米", "露米")}, "unique"),
+            ({"phrases": ("不支持",)}, "supported"),
             ({"threshold": 0.0}, "threshold"),
             ({"threshold": 1.1}, "threshold"),
             ({"score": 0.0}, "score"),
@@ -114,9 +118,40 @@ class WakeWordTests(unittest.TestCase):
         finally:
             sys.modules[module_name] = existing
 
-    def test_rejects_a_missing_explicit_model_file_before_importing_sherpa(self) -> None:
+    def test_requires_each_model_file_before_importing_sherpa(self) -> None:
+        required_files = (
+            "encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx",
+            "decoder-epoch-13-avg-2-chunk-8-left-64.onnx",
+            "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx",
+            "tokens.txt",
+            "keywords_lumilamp.txt",
+        )
+        original_import = builtins.__import__
+
+        def guarded_import(name: str, *args: object, **kwargs: object) -> object:
+            if name == "sherpa_onnx":
+                raise AssertionError("sherpa_onnx imported before model validation")
+            return original_import(name, *args, **kwargs)
+
+        for missing_file in required_files:
+            with self.subTest(missing_file=missing_file):
+                with (
+                    patch.object(
+                        Path,
+                        "is_file",
+                        autospec=True,
+                        side_effect=lambda path: path.name != missing_file,
+                    ),
+                    patch.object(builtins, "__import__", side_effect=guarded_import),
+                    self.assertRaisesRegex(FileNotFoundError, missing_file),
+                ):
+                    SherpaWakeWordDetector(WakeWordConfig(MODEL_DIR))
+
+    def test_validate_model_dir_returns_the_required_paths(self) -> None:
+        validator = getattr(wakeword, "validate_model_dir", None)
+        self.assertIsNotNone(validator)
         with self.assertRaisesRegex(FileNotFoundError, "encoder-epoch-13"):
-            SherpaWakeWordDetector(WakeWordConfig(MODEL_DIR))
+            validator(MODEL_DIR)
 
     def test_constructs_spotter_with_explicit_model_and_keyword_paths(self) -> None:
         config = WakeWordConfig(MODEL_DIR, threshold=0.4, score=1.5)
@@ -153,7 +188,7 @@ class WakeWordTests(unittest.TestCase):
 
         detected = detector.accept_pcm(array("h", [-32768, 0, 32767]))
 
-        self.assertFalse(detected)
+        self.assertIsNone(detected)
         self.assertEqual(spotter.stream.waveforms[0][0], 16000)
         self.assertEqual(
             spotter.stream.waveforms[0][1],
@@ -161,13 +196,21 @@ class WakeWordTests(unittest.TestCase):
         )
         self.assertEqual(spotter.decode_count, 1)
 
-    def test_returns_one_event_and_resets_after_detection(self) -> None:
+    def test_returns_the_matched_phrase(self) -> None:
         detector, spotter = make_detector()
         spotter.ready = True
-        spotter.result = "你好露米"
+        spotter.result = "露米"
 
-        self.assertTrue(detector.accept_pcm(array("h", [1, -1])))
+        self.assertEqual(detector.accept_pcm(array("h", [1, -1])), "露米")
         self.assertEqual(spotter.reset_count, 1)
+
+    def test_rejects_an_unconfigured_nonempty_model_result(self) -> None:
+        detector, spotter = make_detector()
+        spotter.ready = True
+        spotter.result = "非配置短语"
+
+        with self.assertRaisesRegex(ValueError, "unexpected wake-word result"):
+            detector.accept_pcm(array("h", [1, -1]))
 
     def test_reset_clears_the_current_stream(self) -> None:
         detector, spotter = make_detector()

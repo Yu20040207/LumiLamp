@@ -4,6 +4,7 @@ import struct
 import unittest
 
 from lumilamp.voice.asr import (
+    ASR_ENDPOINT,
     build_audio_frame,
     build_connection_headers,
     build_start_frame,
@@ -12,6 +13,22 @@ from lumilamp.voice.asr import (
 
 
 class VoiceAsrProtocolTests(unittest.TestCase):
+    @staticmethod
+    def _server_result_frame(text: str, flags: int, sequence: int) -> bytes:
+        body = json.dumps({"result": {"text": text}}).encode()
+        return (
+            bytes((0x11, 0x90 | flags, 0x10, 0x00))
+            + (struct.pack(">i", sequence) if flags & 0x01 else b"")
+            + struct.pack(">I", len(body))
+            + body
+        )
+
+    def test_uses_bidirectional_streaming_endpoint(self) -> None:
+        self.assertEqual(
+            ASR_ENDPOINT,
+            "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
+        )
+
     def test_start_frame_has_gzipped_json_payload(self) -> None:
         frame = build_start_frame("lamp", "volc.seedasr.sauc.duration")
 
@@ -35,7 +52,20 @@ class VoiceAsrProtocolTests(unittest.TestCase):
         body = json.dumps({"result": {"text": "你好，LumiLamp"}}).encode()
         frame = bytes((0x11, 0x90, 0x10, 0x00)) + struct.pack(">I", len(body)) + body
 
-        self.assertEqual(parse_server_frame(frame), "你好，LumiLamp")
+        result = parse_server_frame(frame)
+
+        self.assertEqual(result.text, "你好，LumiLamp")
+        self.assertFalse(result.is_final)
+        self.assertIsNone(result.sequence)
+
+    def test_parse_server_frame_distinguishes_partial_and_final_results(self) -> None:
+        partial = parse_server_frame(self._server_result_frame("你好", 0x01, 2))
+        final = parse_server_frame(
+            self._server_result_frame("你好露米", 0x03, -3)
+        )
+
+        self.assertEqual((partial.text, partial.is_final, partial.sequence), ("你好", False, 2))
+        self.assertEqual((final.text, final.is_final, final.sequence), ("你好露米", True, -3))
 
     def test_connection_headers_use_connect_id(self) -> None:
         headers = build_connection_headers("app", "token", "resource", "request-id")

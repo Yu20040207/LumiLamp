@@ -8,13 +8,21 @@ import json
 import struct
 import uuid
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .config import VoiceConfig
 
-ASR_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
+ASR_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
 _FRAME_HEADER = bytes((0x11,))
+
+
+@dataclass(frozen=True)
+class AsrResult:
+    text: str
+    is_final: bool
+    sequence: int | None
 
 
 def build_start_frame(app_id: str, resource_id: str, sequence: int = 1) -> bytes:
@@ -65,7 +73,7 @@ def build_audio_frame(audio: bytes, sequence: int, final: bool) -> bytes:
     )
 
 
-def parse_server_frame(frame: bytes) -> str | None:
+def parse_server_frame(frame: bytes) -> AsrResult | None:
     """Return ASR text or raise a non-sensitive error returned by the service."""
     if len(frame) < 8:
         return None
@@ -84,17 +92,26 @@ def parse_server_frame(frame: bytes) -> str | None:
         raise RuntimeError(f"Doubao ASR error {code}: {message}")
     if message_type != 0x09:
         return None
+    sequence = None
     if flags & 0x01:
         if len(frame) < offset + 4:
             return None
+        sequence = struct.unpack(">i", frame[offset : offset + 4])[0]
         offset += 4
+    if len(frame) < offset + 4:
+        return None
     size = struct.unpack(">I", frame[offset : offset + 4])[0]
+    if len(frame) < offset + 4 + size:
+        return None
     body = frame[offset + 4 : offset + 4 + size]
     if frame[2] & 0x0F == 1:
         body = gzip.decompress(body)
     message: Any = json.loads(body.decode())
     result = message.get("result", {}) if isinstance(message, dict) else {}
-    return result.get("text") if isinstance(result, dict) else None
+    text = result.get("text") if isinstance(result, dict) else None
+    if not isinstance(text, str) or not text:
+        return None
+    return AsrResult(text=text, is_final=flags == 0x03, sequence=sequence)
 
 
 def _read_pcm(path: Path) -> bytes:
@@ -131,10 +148,10 @@ async def transcribe_wav(config: VoiceConfig, wav_path: Path) -> str:
             response = await asyncio.wait_for(socket.recv(), timeout=15)
             if isinstance(response, str):
                 continue
-            text = parse_server_frame(response)
-            if text:
-                transcript = text
-            if response[1] >> 4 == 0x09 and (response[1] & 0x0F) == 0x03:
+            result = parse_server_frame(response)
+            if result:
+                transcript = result.text
+            if result and result.is_final:
                 break
     if not transcript:
         raise RuntimeError("Doubao ASR returned no transcript")
