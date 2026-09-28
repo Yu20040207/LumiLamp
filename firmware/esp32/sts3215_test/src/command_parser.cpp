@@ -20,6 +20,7 @@ Command CommandParser::parse(const std::string& text) {
   if (verb == "help" && !(input >> extra)) return makeCommand(CommandType::Help);
   if (verb == "ping" && !(input >> extra)) return makeCommand(CommandType::Ping);
   if (verb == "status" && !(input >> extra)) return makeCommand(CommandType::Status);
+  if (verb == "ledtest" && !(input >> extra)) return makeCommand(CommandType::LedTest);
 
   if (verb == "torque") {
     std::string state;

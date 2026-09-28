@@ -45,9 +45,12 @@ class AudioOutputTests(unittest.TestCase):
 
     @patch("lumilamp.voice.audio_output.subprocess.run")
     def test_plays_wav_with_safe_argument_list(self, run) -> None:
-        play_wav("plughw:Device", Path("/tmp/test.wav"))
+        output_path = Path("/tmp/test.wav")
+
+        play_wav("plughw:Device", output_path)
+
         run.assert_called_once_with(
-            ["aplay", "-D", "plughw:Device", "/tmp/test.wav"],
+            ["aplay", "-D", "plughw:Device", str(output_path)],
             check=True,
         )
 

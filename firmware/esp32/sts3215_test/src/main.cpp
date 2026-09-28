@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp32-hal-rgb-led.h>
+#include <Adafruit_NeoPixel.h>
 #include <SCServo.h>
 
 #include <string>
@@ -17,6 +18,15 @@ const unsigned int kMoveSpeed = 200;
 const unsigned char kMoveAcceleration = 10;
 const unsigned long kStatusLedIntervalMs = 20;
 const uint8_t kStatusLedBrightness = 96;
+const int kWs2812DataPin = 4;
+const uint16_t kWs2812PixelCount = 20;
+const uint8_t kWs2812Brightness = 32;
+const unsigned long kWs2812StepIntervalMs = 120;
+
+Adafruit_NeoPixel strip(kWs2812PixelCount, kWs2812DataPin, NEO_GRB + NEO_KHZ800);
+bool ledTestActive = false;
+uint16_t ledTestIndex = 0;
+unsigned long lastLedTestUpdate = 0;
 
 SMS_STS servo;
 TerminalInput terminalInput;
@@ -65,12 +75,8 @@ void writeStatusLed(uint16_t hue) {
 }
 
 void updateStatusLed() {
-  const unsigned long now = millis();
-  if (now - lastStatusLedUpdate < kStatusLedIntervalMs) return;
-  lastStatusLedUpdate = now;
-
-  writeStatusLed(statusLedHue);
-  statusLedHue += 256;
+  // The onboard RGB LED shares the RMT peripheral with the WS2811 strip.
+  // Keep it static so it cannot interrupt strip.show().
 }
 
 void printPrompt() { Serial.print("> "); }
@@ -83,6 +89,11 @@ void printHelp() {
   Serial.println("  torque off  - disable servo torque");
   Serial.println("  move DEG    - relative move, range -10.0 to +10.0 degrees");
   Serial.println("  help");
+  Serial.println("  ledtest     - start/stop low-brightness WS2812 chase on GPIO4");
+}
+
+void updateLedTest() {
+  // Static-color test: no periodic strip refresh, isolating power/signal issues.
 }
 
 ServoTelemetry readTelemetry() {
@@ -140,6 +151,20 @@ void execute(const Command& command) {
       Serial.println(servo.getLastError() ? "ERROR: torque off failed"
                                           : "OK: torque disabled");
       break;
+    case CommandType::LedTest:
+      ledTestActive = !ledTestActive;
+      if (ledTestActive) {
+        for (uint16_t pixel = 0; pixel < kWs2812PixelCount; ++pixel) {
+          strip.setPixelColor(pixel, strip.Color(0, 0, 255));
+        }
+        strip.show();
+        Serial.println("OK: WS2811 static blue test started on GPIO4 (20 logical pixels)");
+      } else {
+        strip.clear();
+        strip.show();
+        Serial.println("OK: WS2812 led test stopped");
+      }
+      break;
     case CommandType::MoveRelative: {
       const ServoTelemetry telemetry = readTelemetry();
       const SafetyDecision decision =
@@ -175,7 +200,11 @@ void execute(const Command& command) {
 
 void setup() {
   Serial.begin(115200);
-  neopixelWrite(RGB_BUILTIN, 0, 0, 0);
+  neopixelWrite(RGB_BUILTIN, 0, 0, kStatusLedBrightness);
+  strip.begin();
+  strip.setBrightness(kWs2812Brightness);
+  strip.clear();
+  strip.show();
   Serial2.begin(kServoBaud, SERIAL_8N1, kServoRxPin, kServoTxPin);
   servo.pSerial = &Serial2;
   delay(1000);
@@ -196,6 +225,7 @@ void setup() {
 
 void loop() {
   updateStatusLed();
+  updateLedTest();
   while (Serial.available()) {
     const char ch = static_cast<char>(Serial.read());
     const TerminalInputEvent event = terminalInput.push(ch);

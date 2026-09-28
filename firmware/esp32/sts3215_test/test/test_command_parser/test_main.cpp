@@ -10,6 +10,11 @@ void test_parses_status() {
   TEST_ASSERT_EQUAL_INT(CommandType::Status, command.type);
 }
 
+void test_parses_ledtest() {
+  const Command command = CommandParser::parse("ledtest");
+  TEST_ASSERT_EQUAL_INT(CommandType::LedTest, command.type);
+}
+
 void test_parses_positive_relative_move() {
   const Command command = CommandParser::parse("move 5");
   TEST_ASSERT_EQUAL_INT(CommandType::MoveRelative, command.type);
@@ -35,6 +40,7 @@ void test_rejects_non_numeric_move() {
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_parses_status);
+  RUN_TEST(test_parses_ledtest);
   RUN_TEST(test_parses_positive_relative_move);
   RUN_TEST(test_parses_negative_relative_move);
   RUN_TEST(test_rejects_extra_arguments);

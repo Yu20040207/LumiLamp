@@ -10,6 +10,7 @@ enum class CommandType {
   TorqueOn,
   TorqueOff,
   MoveRelative,
+  LedTest,
 };
 
 struct Command {
